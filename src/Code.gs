@@ -62,13 +62,17 @@ function buildMainCard(e, items) {
       .setText(destLabel)
   );
 
+  const itemsJson = JSON.stringify(
+    items.map(i => ({ id: i.id, title: i.title, mimeType: i.mimeType }))
+  );
+
   destSection.addWidget(
     CardService.newTextButton()
       .setText(t('main.select_dest_folder'))
       .setOnClickAction(
         CardService.newAction()
           .setFunctionName('openPickerAndPrepare')
-          .setParameters({ itemsJson: JSON.stringify(items) })
+          .setParameters({ itemsJson: itemsJson })
       )
   );
 
@@ -77,7 +81,9 @@ function buildMainCard(e, items) {
       CardService.newTextButton()
         .setText(t('main.use_source_folder_default'))
         .setOnClickAction(
-          CardService.newAction().setFunctionName('clearDestFolder')
+          CardService.newAction()
+            .setFunctionName('clearDestFolder')
+            .setParameters({ itemsJson: itemsJson })
         )
     );
   }
@@ -85,11 +91,13 @@ function buildMainCard(e, items) {
   card.addSection(destSection);
 
   if (items.length > 0) {
-    const actionSection = CardService.newCardSection();
+    card.addSection(buildOptionsSection());
+  }
 
-    const itemsJson = JSON.stringify(
-      items.map(i => ({ id: i.id, title: i.title, mimeType: i.mimeType }))
-    );
+  card.addSection(buildHistorySection(e, destId, items));
+
+  if (items.length > 0) {
+    const actionSection = CardService.newCardSection();
 
     actionSection.addWidget(
       CardService.newTextButton()
@@ -130,51 +138,61 @@ function clearDestFolder(e) {
 }
 
 function executeCopy(e) {
-  const params    = e.parameters;
-  const items     = JSON.parse(params.itemsJson);
+  const params = e.parameters;
+  const items = JSON.parse(params.itemsJson);
   const userProps = PropertiesService.getUserProperties();
-  const destId    = userProps.getProperty('destFolderId');
+  const destId = userProps.getProperty('destFolderId');
 
-  const results = [];
-  const errors  = [];
+  const formInputs = e.formInputs || {};
 
-  items.forEach(item => {
-    try {
-      let targetFolderId = destId;
+  const prefix = formInputs.prefix ? formInputs.prefix[0] : '';
+  const suffix = formInputs.suffix ? formInputs.suffix[0] : '';
+  const search = formInputs.search ? formInputs.search[0] : '';
+  const replace = formInputs.replace ? formInputs.replace[0] : '';
+  const conflict_resolution = formInputs.conflict_resolution ? formInputs.conflict_resolution[0] : 'rename';
+  const filter_type = formInputs.filter_type ? formInputs.filter_type[0] : 'all';
+  const preserve_perms = formInputs.preserve_perms ? (formInputs.preserve_perms[0] === 'true') : false;
+  const dry_run = formInputs.dry_run ? (formInputs.dry_run[0] === 'true') : false;
 
-      if (!targetFolderId) {
-        targetFolderId = getParentFolderId(item.id, item.mimeType);
-      }
+  const options = {
+    prefix: prefix,
+    suffix: suffix,
+    search: search,
+    replace: replace,
+    conflict_resolution: conflict_resolution,
+    filter_type: filter_type,
+    preserve_perms: preserve_perms,
+    dry_run: dry_run
+  };
 
-      if (item.mimeType === 'application/vnd.google-apps.folder') {
-        const destFolder = DriveApp.getFolderById(targetFolderId);
-        const newName = getSafeName(item.title, destFolder, true);
-        copyFolder(item.id, destFolder, newName);
-        results.push('📁 ' + newName);
-      } else {
-        const destFolder = DriveApp.getFolderById(targetFolderId);
-        const newName = getSafeName(item.title, destFolder, false);
-        
-        const resource = {
-          title: newName,
-          parents: [{ id: targetFolderId }]
-        };
-        
-        Drive.Files.copy(resource, item.id);
-        results.push('📄 ' + newName);
-      }
-    } catch (err) {
-      errors.push(item.title + ': ' + err.message);
-    }
-  });
+  const report = processCopies(items, destId, options);
 
   let msg = '';
-  if (results.length > 0) msg += t('main.copied', { count: results.length }) + '\n' + results.join('\n');
-  if (errors.length  > 0) msg += '\n❌ ' + t('main.errors') + '\n' + errors.join('\n');
+  if (dry_run) {
+    msg += '⚠️ ' + t('simulation.msg') + '\n\n';
+    if (report.simulationLogs.length > 0) {
+      msg += report.simulationLogs.join('\n');
+    } else {
+      msg += 'No items simulated.';
+    }
+  } else {
+    if (report.results.length > 0) {
+      msg += t('main.copied', { count: report.results.length }) + '\n' + report.results.join('\n');
+      addCopyHistoryEntry('Copied: ' + report.results.length + ' items');
+    }
+    if (report.errors.length > 0) {
+      msg += '\n❌ ' + t('main.errors', { count: report.errors.length }) + '\n' + report.errors.join('\n');
+      if (report.results.length === 0) {
+        addCopyHistoryEntry('Failed: ' + report.errors.length + ' errors');
+      }
+    }
+  }
+
+  const title = dry_run ? t('simulation.report_title') : t('main.copy_result');
 
   const resultCard = CardService.newCardBuilder()
     .setName('result')
-    .setHeader(CardService.newCardHeader().setTitle(t('main.copy_result')))
+    .setHeader(CardService.newCardHeader().setTitle(title))
     .addSection(
       CardService.newCardSection()
         .addWidget(CardService.newTextParagraph().setText(msg))
@@ -197,47 +215,6 @@ function goBack(e) {
     .build();
 }
 
-function copyFolder(sourceFolderId, destParent, newName) {
-  const sourceFolder = DriveApp.getFolderById(sourceFolderId);
-  const newFolder    = destParent.createFolder(newName);
-
-  const files = sourceFolder.getFiles();
-  while (files.hasNext()) {
-    const file    = files.next();
-    const safeName = getSafeName(file.getName(), newFolder, false);
-    file.makeCopy(safeName, newFolder);
-  }
-
-  const subFolders = sourceFolder.getFolders();
-  while (subFolders.hasNext()) {
-    const sub     = subFolders.next();
-    const safeName = getSafeName(sub.getName(), newFolder, true);
-    copyFolder(sub.getId(), newFolder, safeName);
-  }
-}
-
-function getSafeName(originalName, parentFolder, isFolder) {
-  let name    = originalName;
-  let counter = 0;
-
-  while (nameExistsInFolder(name, parentFolder, isFolder)) {
-    counter++;
-    name = originalName + ' - copy' + (counter > 1 ? ' ' + counter : '');
-  }
-
-  return name;
-}
-
-function nameExistsInFolder(name, folder, isFolder) {
-  if (isFolder) {
-    const iter = folder.getFoldersByName(name);
-    return iter.hasNext();
-  } else {
-    const iter = folder.getFilesByName(name);
-    return iter.hasNext();
-  }
-}
-
 function getParentFolderId(itemId, mimeType) {
   try {
     if (mimeType === 'application/vnd.google-apps.folder') {
@@ -254,14 +231,14 @@ function getParentFolderId(itemId, mimeType) {
 }
 
 function getPickerUrl() {
-  // return `${ScriptApp.getService().getUrl()}?page=picker`;
-  return 'https://script.google.com/macros/s/AKfycbymGig4e7Mza9Hr9-0zo-ra2QSzMMh9foeTEGpK-6_D/dev?page=picker'
+  return 'https://script.google.com/macros/s/AKfycbymGig4e7Mza9Hr9-0zo-ra2QSzMMh9foeTEGpK-6_D/dev?page=picker';
 }
 
 function saveFolderSelection(folderId, folderName) {
   const props = PropertiesService.getUserProperties();
   props.setProperty('destFolderId', folderId);
   props.setProperty('destFolderName', folderName);
+  addRecentFolder(folderId, folderName);
 }
 
 function doGet(e) {
