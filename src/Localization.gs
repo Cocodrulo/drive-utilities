@@ -1,7 +1,9 @@
 var TRANSLATIONS = {
     es: {
         main:{
-            subtitle:"Drive Copy",
+            subtitle:"Copia carpetas sin sobreescritura",
+            selected_items:"Elementos seleccionados",
+            no_items:"No se han seleccionado elementos. Selecciona archivos o carpetas en Drive.",
             dest_folder:"Carpeta de destino",
             dest_folder_default:"📍 Misma carpeta del archivo (por defecto)",
             current_dest:"Destino actual",
@@ -34,7 +36,9 @@ var TRANSLATIONS = {
     },
     en:{
         main:{
-            subtitle:"Drive Copy",
+            subtitle:"Folders Copy without Overwrite",
+            selected_items:"Selected items",
+            no_items:"No items selected. Select files or folders in Drive.",
             dest_folder:"Destination folder",
             dest_folder_default:"📍 Same folder as the file (by default)",
             current_dest:"Current destination",

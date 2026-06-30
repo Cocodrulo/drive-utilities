@@ -87,13 +87,13 @@
 
 <script>
   const i18n = {
-    title: <?= JSON.stringify(t('picker.title')) ?>,
-    auth_progress: <?= JSON.stringify(t('picker.auth_progress')) ?>,
-    auth_error: <?= JSON.stringify(t('picker.auth_error')) ?>,
-    not_ready: <?= JSON.stringify(t('picker.not_ready')) ?>,
-    saving: <?= JSON.stringify(t('picker.saving')) ?>,
-    folder_saved: <?= JSON.stringify(t('picker.folder_saved')) ?>,
-    save_error: <?= JSON.stringify(t('picker.save_error')) ?>
+    title: <?= t('picker.title') ?>,
+    auth_progress: <?= t('picker.auth_progress') ?>,
+    auth_error: <?= t('picker.auth_error') ?>,
+    not_ready: <?= t('picker.not_ready') ?>,
+    saving: <?= t('picker.saving') ?>,
+    folder_saved: <?= t('picker.folder_saved') ?>,
+    save_error: <?= t('picker.save_error') ?>
   };
 
   gapi.load('picker', { callback: onPickerApiLoad });
