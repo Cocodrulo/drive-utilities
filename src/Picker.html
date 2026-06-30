@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title><?= t('picker.title') ?></title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Google Sans', Roboto, sans-serif;
+      background: #f8f9fa;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+      gap: 20px;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+      padding: 32px 28px;
+      max-width: 420px;
+      width: 100%;
+      text-align: center;
+    }
+
+    .icon { font-size: 48px; margin-bottom: 16px; }
+
+    h1 {
+      font-size: 20px;
+      font-weight: 600;
+      color: #1a1a2e;
+      margin-bottom: 8px;
+    }
+
+    p {
+      font-size: 14px;
+      color: #666;
+      line-height: 1.5;
+      margin-bottom: 24px;
+    }
+
+    button {
+      background: #1a73e8;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 12px 28px;
+      font-size: 15px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s;
+      width: 100%;
+    }
+
+    button:hover { background: #1557b0; }
+    button:disabled { background: #aaa; cursor: default; }
+
+    #status {
+      font-size: 13px;
+      color: #444;
+      min-height: 20px;
+      margin-top: 12px;
+    }
+
+    .success { color: #1e8e3e; font-weight: 500; }
+    .error   { color: #d93025; }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <div class="icon">📁</div>
+  <h1><?= t('picker.heading') ?></h1>
+  <p>
+    <?= t('picker.description') ?>
+  </p>
+  <button id="openPicker" onclick="openPicker()"><?= t('picker.btn_open') ?></button>
+  <div id="status"></div>
+</div>
+
+<script src="https://apis.google.com/js/api.js"></script>
+
+<script>
+  const i18n = {
+    title: <?= JSON.stringify(t('picker.title')) ?>,
+    auth_progress: <?= JSON.stringify(t('picker.auth_progress')) ?>,
+    auth_error: <?= JSON.stringify(t('picker.auth_error')) ?>,
+    not_ready: <?= JSON.stringify(t('picker.not_ready')) ?>,
+    saving: <?= JSON.stringify(t('picker.saving')) ?>,
+    folder_saved: <?= JSON.stringify(t('picker.folder_saved')) ?>,
+    save_error: <?= JSON.stringify(t('picker.save_error')) ?>
+  };
+
+  gapi.load('picker', { callback: onPickerApiLoad });
+  gapi.load('auth2');
+
+  let pickerApiLoaded = false;
+  let oauthToken = null;
+
+  function onPickerApiLoad() {
+    pickerApiLoaded = true;
+  }
+
+  function openPicker() {
+    setStatus(i18n.auth_progress, '');
+    document.getElementById('openPicker').disabled = true;
+
+    google.script.run
+      .withSuccessHandler(token => {
+        oauthToken = token;
+        createPicker();
+      })
+      .withFailureHandler(err => {
+        setStatus(i18n.auth_error + err.message, 'error');
+        document.getElementById('openPicker').disabled = false;
+      })
+      .getOAuthToken();
+  }
+
+  function createPicker() {
+    if (!pickerApiLoaded || !oauthToken) {
+      setStatus(i18n.not_ready, 'error');
+      document.getElementById('openPicker').disabled = false;
+      return;
+    }
+
+    const view = new google.picker.DocsView(google.picker.ViewId.FOLDERS)
+      .setSelectFolderEnabled(true)
+      .setIncludeFolders(true)
+      .setMimeTypes('application/vnd.google-apps.folder');
+
+    const picker = new google.picker.PickerBuilder()
+      .setTitle(i18n.title)
+      .enableFeature(google.picker.Feature.NAV_HIDDEN)
+      .addView(view)
+      .setOAuthToken(oauthToken).setOrigin(google.script.host.origin)
+      .setCallback(pickerCallback)
+      .build();
+
+    picker.setVisible(true);
+    document.getElementById('openPicker').disabled = false;
+  }
+
+  function pickerCallback(data) {
+    if (data.action === google.picker.Action.PICKED) {
+      const folder = data.docs[0];
+      const folderId   = folder.id;
+      const folderName = folder.name;
+
+      setStatus(i18n.saving, '');
+
+      google.script.run
+        .withSuccessHandler(() => {
+          setStatus(i18n.folder_saved.replace('{{name}}', folderName), 'success');
+          google.script.host.close();
+        })
+        .withFailureHandler(err => {
+          setStatus(i18n.save_error + err.message, 'error');
+        })
+        .saveFolderSelection(folderId, folderName);
+    }
+  }
+
+  function setStatus(msg, cls) {
+    const el = document.getElementById('status');
+    el.textContent = msg;
+    el.className = cls || '';
+  }
+</script>
+
+</body>
+</html>

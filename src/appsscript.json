@@ -1,0 +1,43 @@
+{
+  "timeZone": "Europe/Madrid",
+  "exceptionLogging": "STACKDRIVER",
+  "runtimeVersion": "V8",
+  "webapp": {
+    "executeAs": "USER_ACCESSING",
+    "access": "ANYONE"
+  },
+  "oauthScopes": [
+    "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/script.external_request",
+    "https://www.googleapis.com/auth/drive.addons.metadata.readonly"
+  ],
+  "urlFetchWhitelist": [
+    "https://google.com/"
+  ],
+  "addOns": {
+    "common": {
+      "name": "Drive Copy",
+      "logoUrl": "https://i.ibb.co/chL0tHXs/image.png",
+      "homepageTrigger": {
+        "runFunction": "onDriveHomepage"
+      }
+    },
+    "drive": {
+      "homepageTrigger": {
+        "runFunction": "onDriveHomepage"
+      },
+      "onItemsSelectedTrigger": {
+        "runFunction": "onItemsSelected"
+      }
+    }
+  },
+  "dependencies": {
+    "enabledAdvancedServices": [
+      {
+        "userSymbol": "Drive",
+        "version": "v3",
+        "serviceId": "drive"
+      }
+    ]
+  }
+}
