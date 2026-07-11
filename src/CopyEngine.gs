@@ -221,3 +221,12 @@ function getSafeName(originalName, parentFolderId, isFolder) {
   }
   return name;
 }
+
+function nameExistsInFolder(name, folder, isFolder) {
+  if (isFolder) {
+    return folder.getFoldersByName(name).hasNext();
+  } else {
+    return folder.getFilesByName(name).hasNext();
+  }
+}
+
