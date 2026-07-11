@@ -63,6 +63,20 @@ var TRANSLATIONS = {
             clear_history: "Limpiar historial",
             add_fav: "⭐ Guardar actual como favorito"
         },
+        progress: {
+            title: "Copiando...",
+            subtitle: "El proceso puede demorar para carpetas grandes.",
+            status_header: "Estado actual de la copia",
+            copied_count: "Elementos copiados",
+            error_count: "Errores",
+            running_bg: "Copiando en segundo plano. Puedes cerrar esta ventana o esperar. El progreso se actualizará periódicamente.",
+            running_manual: "Procesando copia en lotes. Haz clic en 'Actualizar Estado' para continuar la copia y ver los cambios.",
+            status_label: "Información de ejecución",
+            recent_activity: "Actividad reciente (últimos elementos)",
+            btn_refresh: "🔄 Actualizar Estado / Continuar",
+            btn_cancel: "❌ Cancelar Copia",
+            cancelled: "Copia cancelada correctamente."
+        },
         simulation: {
             report_title: "Reporte de Simulación (Dry Run)",
             msg: "Esto es una simulación. Ningún archivo fue copiado o modificado en Google Drive.",
@@ -136,6 +150,20 @@ var TRANSLATIONS = {
             history_title: "Copy history",
             clear_history: "Clear history",
             add_fav: "⭐ Save current as favorite"
+        },
+        progress: {
+            title: "Copying...",
+            subtitle: "This process may take some time for large folders.",
+            status_header: "Current Copy Status",
+            copied_count: "Copied items",
+            error_count: "Errors",
+            running_bg: "Copying in the background. You can close this window or wait. Progress will update periodically.",
+            running_manual: "Processing copy in batches. Click 'Refresh Status' to continue copying and see updates.",
+            status_label: "Execution info",
+            recent_activity: "Recent activity (last items)",
+            btn_refresh: "🔄 Refresh Status / Continue",
+            btn_cancel: "❌ Cancel Copy",
+            cancelled: "Copy cancelled successfully."
         },
         simulation: {
             report_title: "Simulation Report (Dry Run)",

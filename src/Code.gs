@@ -165,25 +165,55 @@ function executeCopy(e) {
     dry_run: dry_run
   };
 
-  const report = processCopies(items, destId, options);
+  cleanupTriggers();
+  clearCopyState();
 
+  const state = startChunkedCopy(items, destId, options);
+
+  if (state.status === 'completed') {
+    return buildFinalReportResponse(state, params.itemsJson);
+  }
+
+  let triggerCreated = false;
+  try {
+    const trigger = ScriptApp.newTrigger('processCopyTrigger')
+      .timeBased()
+      .everyMinutes(1)
+      .create();
+    state.triggerId = trigger.getUniqueId();
+    triggerCreated = true;
+  } catch (err) {
+    state.triggerId = null;
+  }
+
+  saveCopyState(state);
+
+  const progressCard = buildProgressCard(state, params.itemsJson, triggerCreated);
+  return CardService.newActionResponseBuilder()
+    .setNavigation(CardService.newNavigation().pushCard(progressCard))
+    .build();
+}
+
+function buildFinalReportResponse(state, itemsJson) {
   let msg = '';
+  const dry_run = state.opt.dry_run;
+
   if (dry_run) {
     msg += '⚠️ ' + t('simulation.msg') + '\n\n';
-    if (report.simulationLogs.length > 0) {
-      msg += report.simulationLogs.join('\n');
+    if (state.simulationLogs.length > 0) {
+      msg += state.simulationLogs.join('\n');
     } else {
       msg += 'No items simulated.';
     }
   } else {
-    if (report.results.length > 0) {
-      msg += t('main.copied', { count: report.results.length }) + '\n' + report.results.join('\n');
-      addCopyHistoryEntry('Copied: ' + report.results.length + ' items');
+    if (state.copied > 0) {
+      msg += t('main.copied', { count: state.copied }) + '\n' + state.recent.join('\n');
+      addCopyHistoryEntry('Copied: ' + state.copied + ' items');
     }
-    if (report.errors.length > 0) {
-      msg += '\n❌ ' + t('main.errors', { count: report.errors.length }) + '\n' + report.errors.join('\n');
-      if (report.results.length === 0) {
-        addCopyHistoryEntry('Failed: ' + report.errors.length + ' errors');
+    if (state.errors > 0) {
+      msg += '\n❌ ' + t('main.errors', { count: state.errors }) + '\n' + state.recentErrors.join('\n');
+      if (state.copied === 0) {
+        addCopyHistoryEntry('Failed: ' + state.errors + ' errors');
       }
     }
   }
@@ -199,14 +229,198 @@ function executeCopy(e) {
         .addWidget(
           CardService.newTextButton()
             .setText(t('main.back'))
-            .setOnClickAction(CardService.newAction().setFunctionName('goBack'))
+            .setOnClickAction(
+              CardService.newAction()
+                .setFunctionName('goBackAndRefresh')
+                .setParameters({ itemsJson: itemsJson })
+            )
         )
     )
     .build();
 
+  clearCopyState();
+  cleanupTriggers();
+
   return CardService.newActionResponseBuilder()
     .setNavigation(CardService.newNavigation().pushCard(resultCard))
     .build();
+}
+
+function goBackAndRefresh(e) {
+  const items = JSON.parse(e.parameters.itemsJson);
+  return CardService.newActionResponseBuilder()
+    .setNavigation(
+      CardService.newNavigation().popToRoot().updateCard(buildMainCard(e, items))
+    )
+    .build();
+}
+
+function buildProgressCard(state, itemsJson, triggerCreated) {
+  const card = CardService.newCardBuilder()
+    .setName('progress')
+    .setHeader(
+      CardService.newCardHeader()
+        .setTitle(t('progress.title'))
+        .setSubtitle(t('progress.subtitle'))
+    );
+
+  const statusSection = CardService.newCardSection()
+    .setHeader(t('progress.status_header'));
+
+  statusSection.addWidget(
+    CardService.newTextParagraph().setText(
+      '<b>' + t('progress.copied_count') + ':</b> ' + state.copied + '<br>' +
+      '<b>' + t('progress.error_count') + ':</b> ' + state.errors
+    )
+  );
+
+  const statusMsg = triggerCreated 
+    ? t('progress.running_bg') 
+    : t('progress.running_manual');
+  
+  statusSection.addWidget(
+    CardService.newDecoratedText()
+      .setTopLabel(t('progress.status_label'))
+      .setText(statusMsg)
+      .setWrapText(true)
+  );
+
+  card.addSection(statusSection);
+
+  if (state.recent.length > 0 || state.recentErrors.length > 0 || state.simulationLogs.length > 0) {
+    const logsSection = CardService.newCardSection()
+      .setHeader(t('progress.recent_activity'))
+      .setCollapsible(true);
+
+    let logsText = '';
+    if (state.opt.dry_run) {
+      logsText = state.simulationLogs.slice(-15).join('<br>');
+    } else {
+      const recentList = state.recent.slice(-10).map(item => '<font color="#2e7d32">' + item + '</font>');
+      const errorList = state.recentErrors.slice(-10).map(err => '<font color="#c62828">' + err + '</font>');
+      logsText = recentList.concat(errorList).join('<br>');
+    }
+
+    if (!logsText) logsText = 'No logs yet.';
+
+    logsSection.addWidget(
+      CardService.newTextParagraph().setText(logsText)
+    );
+    card.addSection(logsSection);
+  }
+
+  const actionSection = CardService.newCardSection();
+
+  actionSection.addWidget(
+    CardService.newTextButton()
+      .setText(t('progress.btn_refresh'))
+      .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+      .setOnClickAction(
+        CardService.newAction()
+          .setFunctionName('refreshCopyStatus')
+          .setParameters({ itemsJson: itemsJson })
+      )
+  );
+
+  actionSection.addWidget(
+    CardService.newTextButton()
+      .setText(t('progress.btn_cancel'))
+      .setOnClickAction(
+        CardService.newAction()
+          .setFunctionName('cancelCopyAction')
+          .setParameters({ itemsJson: itemsJson })
+      )
+  );
+
+  card.addSection(actionSection);
+
+  return card.build();
+}
+
+function refreshCopyStatus(e) {
+  const itemsJson = e.parameters.itemsJson;
+  let state = getCopyState();
+
+  if (!state) {
+    const items = JSON.parse(itemsJson);
+    return CardService.newActionResponseBuilder()
+      .setNavigation(
+        CardService.newNavigation().popToRoot().updateCard(buildMainCard(e, items))
+      )
+      .build();
+  }
+
+  if (state.status === 'completed' || state.status === 'error') {
+    return buildFinalReportResponse(state, itemsJson);
+  }
+
+  state = executeCopyChunk(false);
+
+  if (state.status === 'completed' || state.status === 'error') {
+    return buildFinalReportResponse(state, itemsJson);
+  }
+
+  const triggerCreated = !!state.triggerId;
+  const progressCard = buildProgressCard(state, itemsJson, triggerCreated);
+
+  return CardService.newActionResponseBuilder()
+    .setNavigation(
+      CardService.newNavigation().updateCard(progressCard)
+    )
+    .build();
+}
+
+function cancelCopyAction(e) {
+  clearCopyState();
+  cleanupTriggers();
+
+  const items = JSON.parse(e.parameters.itemsJson);
+  const mainCard = buildMainCard(e, items);
+
+  return CardService.newActionResponseBuilder()
+    .setNavigation(
+      CardService.newNavigation().popToRoot().updateCard(mainCard)
+    )
+    .setNotification(
+      CardService.newNotification().setText(t('progress.cancelled'))
+    )
+    .build();
+}
+
+function processCopyTrigger() {
+  const state = getCopyState();
+  if (!state || state.status !== 'in_progress') {
+    cleanupTriggers();
+    return;
+  }
+
+  const result = executeCopyChunk(true);
+
+  if (result.status === 'completed' || result.status === 'error') {
+    cleanupTriggers();
+    if (result.status === 'completed') {
+      if (!result.opt.dry_run) {
+        addCopyHistoryEntry('Copied: ' + result.copied + ' items (Background)');
+      }
+    } else {
+      addCopyHistoryEntry('Failed: ' + result.errors + ' errors (Background)');
+    }
+  }
+}
+
+function cleanupTriggers() {
+  try {
+    const triggers = ScriptApp.getProjectTriggers();
+    for (let i = 0; i < triggers.length; i++) {
+      if (triggers[i].getHandlerFunction() === 'processCopyTrigger') {
+        try {
+          ScriptApp.deleteTrigger(triggers[i]);
+        } catch (err) {}
+      }
+    }
+  } catch (e) {
+    console.error('Failed to cleanup triggers: ' + e.message);
+  }
 }
 
 function goBack(e) {
